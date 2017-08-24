@@ -86,6 +86,7 @@ static void nx_drm_mode_config_init(struct drm_device *drm)
 		 drm->mode_config.max_width, drm->mode_config.max_height);
 }
 
+#if 0
 static int nx_drm_load(struct drm_device *drm, unsigned long flags)
 {
 	struct nx_drm_priv *priv;
@@ -152,6 +153,7 @@ static void nx_drm_unload(struct drm_device *drm)
 
 	drm->dev_private = NULL;
 }
+#endif
 
 static struct drm_ioctl_desc nx_drm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(NX_GEM_CREATE, nx_drm_gem_create_ioctl,
@@ -212,8 +214,10 @@ static void nx_drm_postclose(struct drm_device *drm, struct drm_file *file)
 static struct drm_driver nx_drm_driver = {
 	.driver_features = DRIVER_HAVE_IRQ | DRIVER_MODESET |
 		DRIVER_GEM | DRIVER_PRIME | DRIVER_IRQ_SHARED,
+#if 0
 	.load = nx_drm_load,
 	.unload = nx_drm_unload,
+#endif
 	.fops = &nx_drm_fops,	/* replace fops */
 	.lastclose = nx_drm_lastclose,
 	.postclose = nx_drm_postclose,
@@ -247,15 +251,118 @@ static struct drm_driver nx_drm_driver = {
 	.minor = 0,
 };
 
+#if 0
 static int nx_drm_bind(struct device *dev)
 {
 	return drm_platform_init(&nx_drm_driver, to_platform_device(dev));
 }
+#endif
 
+#if 1
+static int nx_drm_bind(struct device *dev)
+{
+	struct drm_device *drm;
+	struct nx_drm_priv *priv;
+	int ret;
+	
+	DRM_DEBUG("\n");
+
+	drm = drm_dev_alloc(&nx_drm_driver,dev);
+	if (IS_ERR(drm))
+		return PTR_ERR(drm);
+	
+	drm->platformdev = to_platform_device(dev);
+	
+	//DRM_DEBUG_DRIVER("drm %s flags 0x%lx\n",dev_name(drm->dev),flags);
+
+	priv = kzalloc(sizeof(struct nx_drm_priv),GFP_KERNEL);
+	if (!priv) {
+		ret = -ENOMEM;
+		goto err_free_drm;
+	}
+
+	mutex_init(&priv->lock);
+	drm->dev_private = (void *)priv;
+	dev_set_drvdata(drm->dev, drm);
+
+	/*drm->mode_config initialization */
+	drm_mode_config_init(drm);
+	nx_drm_mode_config_init(drm);
+
+	/*Try to nexell crtcs. */
+	ret = nx_drm_crtc_init(drm);
+	if (ret)
+		goto err_mode_config_cleanup;
+
+	ret = drm_vblank_init(drm, priv->num_crtcs);
+	if (ret)
+		goto err_unbind_all;
+
+	/* Try to bind all sub drivers. */
+	ret = component_bind_all(drm->dev, drm);
+	if (ret) 
+		goto err_mode_config_cleanup;
+
+	/* init kms poll for handling hpd */
+	drm_kms_helper_poll_init(drm);
+
+	/* force connectors detection for LCD */
+	if (priv->force_detect)
+		drm_helper_hpd_irq_event(drm);
+
+	/* register the DRM device */
+	ret = drm_dev_register(drm,0);
+	if (ret)
+		goto err_cleanup_fbdev;
+
+	return 0;
+
+err_cleanup_fbdev:
+	//nx_drm_fbdev_fini(drm);
+	//drm_kms_helper_poll_fini(drm);
+	//nx_drm_device_subdrv_remove(drm);
+
+err_unbind_all:
+	component_unbind_all(drm->dev, drm);
+
+err_mode_config_cleanup:
+	drm_mode_config_cleanup(drm);
+	kfree(priv);
+
+err_free_drm:
+	drm_dev_unref(drm);
+	return ret;
+}
+#endif
+
+#if 0
 static void nx_drm_unbind(struct device *dev)
 {
 	drm_put_dev(platform_get_drvdata(to_platform_device(dev)));
 }
+#endif
+
+#if 1
+static void nx_drm_unbind(struct device *dev)
+{
+	struct drm_device *drm = dev_get_drvdata(dev);
+
+	drm_dev_unregister(drm);
+
+	DRM_DEBUG_DRIVER("enter\n");
+
+	nx_drm_framebuffer_fini(drm);
+
+	drm_vblank_cleanup(drm);
+	drm_kms_helper_poll_fini(drm);
+	drm_mode_config_cleanup(drm);
+	kfree(drm->dev_private);
+
+	drm->dev_private = NULL;
+
+	drm_dev_unref(drm);
+}
+#endif
 
 static const struct component_master_ops nx_drm_ops = {
 	.bind = nx_drm_bind,
