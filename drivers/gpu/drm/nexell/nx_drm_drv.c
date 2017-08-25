@@ -256,6 +256,11 @@ static int nx_drm_bind(struct device *dev)
 {
 	return drm_platform_init(&nx_drm_driver, to_platform_device(dev));
 }
+
+static void nx_drm_unbind(struct device *dev)
+{
+	drm_put_dev(platform_get_drvdata(to_platform_device(dev)));
+}
 #endif
 
 #if 1
@@ -318,10 +323,8 @@ static int nx_drm_bind(struct device *dev)
 	return 0;
 
 err_cleanup_fbdev:
-	//nx_drm_fbdev_fini(drm);
-	//drm_kms_helper_poll_fini(drm);
-	//nx_drm_device_subdrv_remove(drm);
-
+	drm_kms_helper_poll_fini(drm);
+	
 err_unbind_all:
 	component_unbind_all(drm->dev, drm);
 
@@ -333,16 +336,7 @@ err_free_drm:
 	drm_dev_unref(drm);
 	return ret;
 }
-#endif
 
-#if 0
-static void nx_drm_unbind(struct device *dev)
-{
-	drm_put_dev(platform_get_drvdata(to_platform_device(dev)));
-}
-#endif
-
-#if 1
 static void nx_drm_unbind(struct device *dev)
 {
 	struct drm_device *drm = dev_get_drvdata(dev);

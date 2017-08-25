@@ -99,7 +99,7 @@ static void nx_drm_plane_destroy(struct drm_plane *plane)
 
 	DRM_DEBUG_KMS("enter\n");
 
-	//nx_drm_plane_disable(plane);
+	nx_drm_plane_disable(plane);
 	drm_plane_cleanup(plane);
 	kfree(nx_plane);
 }
